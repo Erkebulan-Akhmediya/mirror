@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -57,10 +58,18 @@ func (p *page) save() error {
 	} else if p.urlPath[len(p.urlPath)-5:] != ".html" {
 		p.urlPath += ".html"
 	}
-	p.saveTo(p.urlPath)
-	return nil
+	return p.saveTo(p.urlPath)
 }
 
-func (p *page) saveTo(path string) {
-	fmt.Println("Saving page:", path)
+func (p *page) saveTo(path string) error {
+	fmt.Println("downloading to: ./" + path)
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash == -1 {
+		return os.WriteFile(path, p.content, os.ModePerm)
+	}
+	dir := "./" + path[:lastSlash]
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return err
+	}
+	return os.WriteFile(path, p.content, os.ModePerm)
 }
