@@ -5,47 +5,23 @@ import (
 	"fmt"
 	"golang.org/x/net/html"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 )
 
 type page struct {
-	content []byte
-	urlPath string
+	content                 []byte
+	urlPath, host, protocol string
 }
 
-func (s *search) fetchPage(urlPath string) (*page, error) {
-	fullUrl := (&url.URL{Path: urlPath, Scheme: s.protocol, Host: s.host}).String()
-	res, err := http.Get(fullUrl)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		err = res.Body.Close()
-	}()
-
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("request failed with status %d: %s", res.StatusCode, res.Status)
-	}
-
-	cth := res.Header.Get("Content-Type")
-	ct := strings.Split(cth, ";")[0]
-	if ct != "text/html" {
-		return nil, fmt.Errorf("unsupported content type: %s", ct)
-	}
-
-	content, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	return &page{content: content, urlPath: urlPath}, nil
-}
-
-func (p *page) toTree() (*html.Node, error) {
+func (p *page) toTree() (*node, error) {
 	r := p.toReader()
-	return html.Parse(r)
+	root, err := html.Parse(r)
+	if err != nil {
+		return nil, err
+	}
+	domRoot := node(*root)
+	return &domRoot, nil
 }
 
 func (p *page) toReader() io.Reader {
@@ -72,4 +48,24 @@ func (p *page) saveTo(path string) error {
 		return err
 	}
 	return os.WriteFile(path, p.content, os.ModePerm)
+}
+
+func (p *page) urlPaths() ([]string, error) {
+	tree, err := p.toTree()
+	if err != nil {
+		return nil, fmt.Errorf("error parsing page: %v", err)
+	}
+	return p.urlPathsInTree(tree), nil
+}
+
+func (p *page) urlPathsInTree(n *node) []string {
+	var urlPaths []string
+	if urlPath, found := n.urlPath(p.host); found {
+		urlPaths = append(urlPaths, urlPath)
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		domChild := node(*child)
+		urlPaths = append(urlPaths, p.urlPathsInTree(&domChild)...)
+	}
+	return urlPaths
 }

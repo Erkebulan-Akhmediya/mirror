@@ -7,15 +7,9 @@ import (
 )
 
 func main() {
-	start := os.Args[1]
-	parsedUrl, err := url.Parse(start)
+	parsedUrl, err := url.Parse(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
-	}
-	s := search{
-		seen:     make(map[string]bool),
-		host:     parsedUrl.Host,
-		protocol: parsedUrl.Scheme,
 	}
 	parentDir := "./" + parsedUrl.Host
 	if err = os.Mkdir(parentDir, os.ModePerm); err != nil {
@@ -24,7 +18,8 @@ func main() {
 	if err = os.Chdir(parentDir); err != nil {
 		log.Fatal(err)
 	}
-	s.dfs(start)
+	urlPath := trimSlash(parsedUrl.Path)
+	newSearch(parsedUrl).dfs(urlPath)
 	if err = os.Chdir("../"); err != nil {
 		log.Fatal(err)
 	}

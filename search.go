@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/net/html"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
+	"strings"
 )
 
 type search struct {
@@ -13,11 +15,15 @@ type search struct {
 	protocol string
 }
 
-func (s *search) dfs(fullUrl string) {
-	urlPath, err := trimToPath(fullUrl)
-	if err != nil {
-		return
+func newSearch(parsedUrl *url.URL) *search {
+	return &search{
+		seen:     make(map[string]bool),
+		host:     parsedUrl.Host,
+		protocol: parsedUrl.Scheme,
 	}
+}
+
+func (s *search) dfs(urlPath string) {
 	if s.seen[urlPath] {
 		return
 	}
@@ -27,52 +33,42 @@ func (s *search) dfs(fullUrl string) {
 		log.Println("Error fetching page:", err)
 		return
 	}
+	urlPaths, err := p.urlPaths()
+	if err != nil {
+		log.Println("Error finding url paths:", err)
+		return
+	}
+	for _, link := range urlPaths {
+		s.dfs(link)
+	}
 	if err = p.save(); err != nil {
 		log.Println("Error saving page:", err)
 	}
-	tree, err := p.toTree()
+}
+
+func (s *search) fetchPage(urlPath string) (*page, error) {
+	fullUrl := (&url.URL{Path: urlPath, Scheme: s.protocol, Host: s.host}).String()
+	res, err := http.Get(fullUrl)
 	if err != nil {
-		log.Println("Error parsing page:", err)
-		return
+		return nil, err
 	}
-	links := s.findLinks(tree)
-	for _, link := range links {
-		s.dfs(link)
-	}
-}
+	defer func() {
+		err = res.Body.Close()
+	}()
 
-func (s *search) findLinks(node *html.Node) []string {
-	res := s.findLink(node)
-	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		res = append(res, s.findLinks(child)...)
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request failed to %q with status %d: %s", fullUrl, res.StatusCode, res.Status)
 	}
-	return res
-}
 
-func (s *search) findLink(node *html.Node) []string {
-	if node.Type != html.ElementNode || node.Data != "a" {
-		return nil
+	cth := res.Header.Get("Content-Type")
+	ct := strings.Split(cth, ";")[0]
+	if ct != "text/html" {
+		return nil, fmt.Errorf("unsupported content type: %s", ct)
 	}
-	var res []string
-	for _, a := range node.Attr {
-		if a.Key != "href" {
-			continue
-		}
-		parsedUrl, err := url.Parse(a.Val)
-		if err != nil {
-			fmt.Println("Error parsing url:", err)
-			break
-		}
-		if parsedUrl.Host == s.host {
-			res = append(res, parsedUrl.String())
-			break
-		}
-		if parsedUrl.Host == "" {
-			parsedUrl.Host = s.host
-			parsedUrl.Scheme = s.protocol
-			res = append(res, parsedUrl.String())
-			break
-		}
+
+	content, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
 	}
-	return res
+	return &page{content: content, urlPath: urlPath, host: s.host, protocol: s.protocol}, nil
 }
