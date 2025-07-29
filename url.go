@@ -1,5 +1,6 @@
 package main
 
+// the function removes trailing and leading slashes.
 func trimSlash(s string) string {
 	if s == "/" || s == "" {
 		return ""
@@ -13,6 +14,7 @@ func trimSlash(s string) string {
 	return s
 }
 
+// the function appends .html file extension if necessary.
 func appendHtml(urlPath string) string {
 	if urlPath == "" {
 		return "index.html"

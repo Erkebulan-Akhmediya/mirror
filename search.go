@@ -16,6 +16,7 @@ type search struct {
 	protocol string
 }
 
+// creates an instance of search struct.
 func newSearch(parsedUrl *url.URL) *search {
 	return &search{
 		seen:     make(map[string]bool),
@@ -24,6 +25,7 @@ func newSearch(parsedUrl *url.URL) *search {
 	}
 }
 
+// the function searches for links using DFS algorithm.
 func (s *search) dfs(urlPath string) {
 	if s.seen[urlPath] {
 		return
@@ -53,6 +55,7 @@ func (s *search) dfs(urlPath string) {
 	wg.Wait()
 }
 
+// the function accepts url path and returns the page struct representing fetched page.
 func (s *search) fetchPage(urlPath string) (*page, error) {
 	fullUrl := (&url.URL{Path: urlPath, Scheme: s.protocol, Host: s.host}).String()
 	res, err := http.Get(fullUrl)
