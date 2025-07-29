@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"golang.org/x/net/html"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -14,14 +15,9 @@ type page struct {
 	urlPath, host, protocol string
 }
 
-func (p *page) toTree() (*node, error) {
+func (p *page) toTree() (*html.Node, error) {
 	r := p.toReader()
-	root, err := html.Parse(r)
-	if err != nil {
-		return nil, err
-	}
-	domRoot := node(*root)
-	return &domRoot, nil
+	return html.Parse(r)
 }
 
 func (p *page) toReader() io.Reader {
@@ -29,11 +25,7 @@ func (p *page) toReader() io.Reader {
 }
 
 func (p *page) save() error {
-	if p.urlPath == "" {
-		p.urlPath = "index.html"
-	} else if p.urlPath[len(p.urlPath)-5:] != ".html" {
-		p.urlPath += ".html"
-	}
+	p.urlPath = appendHtml(p.urlPath)
 	return p.saveTo(p.urlPath)
 }
 
@@ -41,13 +33,13 @@ func (p *page) saveTo(path string) error {
 	fmt.Println("downloading to: ./" + path)
 	lastSlash := strings.LastIndex(path, "/")
 	if lastSlash == -1 {
-		return os.WriteFile(path, p.content, os.ModePerm)
+		return os.WriteFile(path, []byte(p.content), os.ModePerm)
 	}
 	dir := "./" + path[:lastSlash]
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return err
 	}
-	return os.WriteFile(path, p.content, os.ModePerm)
+	return os.WriteFile(path, []byte(p.content), os.ModePerm)
 }
 
 func (p *page) urlPaths() ([]string, error) {
@@ -58,14 +50,33 @@ func (p *page) urlPaths() ([]string, error) {
 	return p.urlPathsInTree(tree), nil
 }
 
-func (p *page) urlPathsInTree(n *node) []string {
+func (p *page) urlPathsInTree(n *html.Node) []string {
 	var urlPaths []string
-	if urlPath, found := n.urlPath(p.host); found {
+	if urlPath, found := p.urlPathInNode(n); found {
 		urlPaths = append(urlPaths, urlPath)
 	}
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
-		domChild := node(*child)
-		urlPaths = append(urlPaths, p.urlPathsInTree(&domChild)...)
+		urlPaths = append(urlPaths, p.urlPathsInTree(child)...)
 	}
 	return urlPaths
+}
+
+func (p *page) urlPathInNode(n *html.Node) (string, bool) {
+	if n.Type != html.ElementNode || n.Data != "a" {
+		return "", false
+	}
+	for _, a := range n.Attr {
+		if a.Key != "href" {
+			continue
+		}
+		parsedUrl, err := url.Parse(a.Val)
+		if err != nil {
+			fmt.Println("Error parsing url:", err)
+			return "", false
+		}
+		if parsedUrl.Host == p.host || parsedUrl.Host == "" {
+			return trimSlash(parsedUrl.Path), true
+		}
+	}
+	return "", false
 }

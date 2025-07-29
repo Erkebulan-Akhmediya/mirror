@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 type search struct {
@@ -38,12 +39,18 @@ func (s *search) dfs(urlPath string) {
 		log.Println("Error finding url paths:", err)
 		return
 	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func(p *page) {
+		if err := p.save(); err != nil {
+			log.Println("Error saving page:", err)
+		}
+		wg.Done()
+	}(p)
 	for _, link := range urlPaths {
 		s.dfs(link)
 	}
-	if err = p.save(); err != nil {
-		log.Println("Error saving page:", err)
-	}
+	wg.Wait()
 }
 
 func (s *search) fetchPage(urlPath string) (*page, error) {
@@ -57,7 +64,7 @@ func (s *search) fetchPage(urlPath string) (*page, error) {
 	}()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("request failed to %q with status %d: %s", fullUrl, res.StatusCode, res.Status)
+		return nil, fmt.Errorf("request to %q failed with status %d: %s", fullUrl, res.StatusCode, res.Status)
 	}
 
 	cth := res.Header.Get("Content-Type")
